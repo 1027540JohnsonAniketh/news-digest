@@ -5,9 +5,23 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"           # Pin to stable Python — avoids 3.14 incompatibility
+
+      # ── Always required ──────────────────────────────────────────────────────
+      - key: ANTHROPIC_API_KEY
+        sync: false               # Paste in Render dashboard
+
+      # ── Free news API keys ───────────────────────────────────────────────────
       - key: CURRENTS_API_KEY
-        sync: false          # You'll paste this in Render dashboard
+        sync: false
       - key: GUARDIAN_API_KEY
         sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
+      - key: NEWSDATA_API_KEY
+        sync: false               # newsdata.io — free 200 req/day
+
+      # ── AI live search keys (optional but powerful) ───────────────────────────
+      - key: PERPLEXITY_API_KEY
+        sync: false               # perplexity.ai sonar model
+      - key: GEMINI_API_KEY
+        sync: false               # Google AI Studio — free 1500 req/day
