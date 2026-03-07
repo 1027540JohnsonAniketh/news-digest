@@ -1,7 +1,23 @@
 import os
+import time
 import requests
 import feedparser
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# ── Simple TTL cache (prevents 429s on Currents / Gemini / Perplexity) ────────
+_FETCH_CACHE: dict = {}   # {cache_key: (expires_at, results)}
+_CACHE_TTL = 300          # 5 minutes — fresh enough for news, avoids rate-limit hammering
+
+def _cached(key: str, fn):
+    """Return cached result if still within TTL, otherwise call fn() and cache it."""
+    now = time.time()
+    if key in _FETCH_CACHE:
+        expires_at, cached_result = _FETCH_CACHE[key]
+        if now < expires_at:
+            return cached_result
+    result = fn()
+    _FETCH_CACHE[key] = (now + _CACHE_TTL, result)
+    return result
 
 # ── API Keys ──────────────────────────────────────────────────────────────────
 CURRENTS_API_KEY   = os.getenv("CURRENTS_API_KEY")
@@ -128,6 +144,9 @@ CATEGORY_PERPLEXITY_QUERIES = {
 def fetch_currents(category=None, language="en", max_articles=8):
     if not CURRENTS_API_KEY:
         return []
+    return _cached(f"currents:{category}", lambda: _do_fetch_currents(category, language, max_articles))
+
+def _do_fetch_currents(category, language, max_articles):
     url = "https://api.currentsapi.services/v1/latest-news"
     params = {"apiKey": CURRENTS_API_KEY, "language": language}
     if category:
@@ -322,7 +341,9 @@ def fetch_ap_rss(max_articles=8):
 def fetch_perplexity(topic=None, max_results=6):
     if not PERPLEXITY_API_KEY:
         return []
-    # Use category-specific query if available, else generic
+    return _cached(f"perplexity:{topic}", lambda: _do_fetch_perplexity(topic, max_results))
+
+def _do_fetch_perplexity(topic, max_results):
     query = CATEGORY_PERPLEXITY_QUERIES.get(
         topic,
         (
@@ -378,7 +399,9 @@ def fetch_perplexity(topic=None, max_results=6):
 def fetch_gemini_news(topic=None, max_results=6):
     if not GEMINI_API_KEY:
         return []
-    # Use category-specific query if available, else generic
+    return _cached(f"gemini:{topic}", lambda: _do_fetch_gemini_news(topic, max_results))
+
+def _do_fetch_gemini_news(topic, max_results):
     query = CATEGORY_GEMINI_QUERIES.get(
         topic,
         (
