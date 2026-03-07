@@ -1,11 +1,11 @@
 {
-  "name": "News Digest",
-  "short_name": "News Digest",
-  "description": "Real-time news summarized by AI",
+  "name": "World Pulse",
+  "short_name": "WorldPulse",
+  "description": "AI-powered live world news digest",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f1117",
-  "theme_color": "#1a1f2e",
+  "background_color": "#0a0d14",
+  "theme_color": "#0a0d14",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -29,9 +29,9 @@
       "description": "Search a specific topic"
     },
     {
-      "name": "Full Digest",
-      "url": "/?action=digest",
-      "description": "Load full news digest"
+      "name": "Refresh Digest",
+      "url": "/",
+      "description": "Load the latest world news digest"
     }
   ]
 }

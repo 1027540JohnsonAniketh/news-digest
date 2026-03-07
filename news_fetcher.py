@@ -10,27 +10,117 @@ NEWSDATA_API_KEY   = os.getenv("NEWSDATA_API_KEY")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY")
 
-CATEGORIES = ["technology", "politics", "business", "health", "sports", "science", "entertainment"]
+# ── Category taxonomy ─────────────────────────────────────────────────────────
+CATEGORIES = [
+    "geopolitical",
+    "finance_economy",
+    "markets_crypto",
+    "climate_environment",
+    "technology_ai",
+    "health_science",
+    "energy_resources",
+    "politics_policy",
+    "innovation_space",
+    "culture_society",
+]
 
 REDDIT_SUBREDDITS = {
-    "world news":    "worldnews",
-    "technology":    "technology",
-    "politics":      "politics",
-    "business":      "business",
-    "science":       "science",
-    "sports":        "sports",
-    "entertainment": "entertainment",
+    "geopolitical":        "worldnews",
+    "finance_economy":     "economics",
+    "markets_crypto":      "investing",
+    "climate_environment": "environment",
+    "technology_ai":       "technology",
+    "health_science":      "science",
+    "energy_resources":    "energy",
+    "politics_policy":     "politics",
+    "innovation_space":    "Futurology",
+    "culture_society":     "entertainment",
 }
 
+# Map internal category keys → Currents API taxonomy strings
+CURRENTS_CATEGORY_MAP = {
+    "geopolitical":        "world",
+    "finance_economy":     "finance",
+    "markets_crypto":      "finance",
+    "climate_environment": "environment",
+    "technology_ai":       "technology",
+    "health_science":      "health",
+    "energy_resources":    "energy",
+    "politics_policy":     "politics",
+    "innovation_space":    "science",
+    "culture_society":     "entertainment",
+}
+
+# BBC RSS feeds per category
 BBC_FEEDS = {
-    "general":       "https://feeds.bbci.co.uk/news/rss.xml",
-    "world news":    "https://feeds.bbci.co.uk/news/world/rss.xml",
-    "technology":    "https://feeds.bbci.co.uk/news/technology/rss.xml",
-    "business":      "https://feeds.bbci.co.uk/news/business/rss.xml",
-    "science":       "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
-    "health":        "https://feeds.bbci.co.uk/news/health/rss.xml",
-    "entertainment": "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml",
-    "sports":        "https://feeds.bbci.co.uk/sport/rss.xml",
+    "general":             "https://feeds.bbci.co.uk/news/rss.xml",
+    "world news":          "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "geopolitical":        "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "finance_economy":     "https://feeds.bbci.co.uk/news/business/rss.xml",
+    "markets_crypto":      "https://feeds.bbci.co.uk/news/business/rss.xml",
+    "climate_environment": "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+    "technology_ai":       "https://feeds.bbci.co.uk/news/technology/rss.xml",
+    "health_science":      "https://feeds.bbci.co.uk/news/health/rss.xml",
+    "energy_resources":    "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+    "politics_policy":     "https://feeds.bbci.co.uk/news/politics/rss.xml",
+    "innovation_space":    "https://feeds.bbci.co.uk/news/technology/rss.xml",
+    "culture_society":     "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml",
+}
+
+# Guardian search queries per category
+CATEGORY_GUARDIAN_QUERIES = {
+    "geopolitical":        "war OR diplomacy OR sanctions OR international relations",
+    "finance_economy":     "economy OR GDP OR inflation OR central bank OR interest rates",
+    "markets_crypto":      "stock market OR cryptocurrency OR bitcoin OR commodities",
+    "climate_environment": "climate change OR environment OR natural disaster OR green energy",
+    "technology_ai":       "artificial intelligence OR tech company OR cybersecurity",
+    "health_science":      "medical research OR pandemic OR health OR scientific breakthrough",
+    "energy_resources":    "oil OR gas OR renewable energy OR mining",
+    "politics_policy":     "politics OR election OR legislation OR government policy",
+    "innovation_space":    "space OR rocket OR startup OR emerging technology",
+    "culture_society":     "entertainment OR sport OR culture OR social trends",
+}
+
+# NewsData.io search queries per category
+CATEGORY_NEWSDATA_QUERIES = {
+    "geopolitical":        "geopolitics diplomacy war conflict",
+    "finance_economy":     "economy inflation GDP interest rate",
+    "markets_crypto":      "stock market cryptocurrency bitcoin",
+    "climate_environment": "climate environment disaster",
+    "technology_ai":       "artificial intelligence technology AI",
+    "health_science":      "health medicine science research",
+    "energy_resources":    "oil gas energy renewable",
+    "politics_policy":     "politics election policy",
+    "innovation_space":    "space innovation startup",
+    "culture_society":     "entertainment sports culture",
+}
+
+# Gemini with Google Search grounding — category-specific prompts
+CATEGORY_GEMINI_QUERIES = {
+    "geopolitical":        "Top 5 latest geopolitical events, conflicts, and diplomatic developments right now? List: title + one sentence.",
+    "finance_economy":     "Top 5 latest economic news — GDP, inflation, central bank decisions today? List: title + one sentence.",
+    "markets_crypto":      "Top 5 latest stock market movements, crypto prices, and commodity news right now? List: title + one sentence.",
+    "climate_environment": "Top 5 latest climate change, environmental, and natural disaster news today? List: title + one sentence.",
+    "technology_ai":       "Top 5 latest AI, tech company, and cybersecurity news right now? List: title + one sentence.",
+    "health_science":      "Top 5 latest medical research breakthroughs and public health news today? List: title + one sentence.",
+    "energy_resources":    "Top 5 latest oil, gas, renewable energy, and mining news right now? List: title + one sentence.",
+    "politics_policy":     "Top 5 latest domestic politics, elections, and legislation news today? List: title + one sentence.",
+    "innovation_space":    "Top 5 latest space exploration, startup, and emerging technology news right now? List: title + one sentence.",
+    "culture_society":     "Top 5 latest entertainment, sports, and social trend news today? List: title + one sentence.",
+}
+
+# Perplexity Sonar — category-specific prompts
+CATEGORY_PERPLEXITY_QUERIES = {
+    "geopolitical":        "Top 5 breaking geopolitical news right now — wars, sanctions, diplomacy? Title + one sentence each.",
+    "finance_economy":     "Top 5 most important economic headlines today — interest rates, inflation, GDP? Title + one sentence each.",
+    "markets_crypto":      "Top 5 market-moving stories right now in stocks, crypto, and commodities? Title + one sentence each.",
+    "climate_environment": "Top 5 biggest climate, weather, and environmental news right now? Title + one sentence each.",
+    "technology_ai":       "Top 5 biggest AI and tech industry breaking news right now? Title + one sentence each.",
+    "health_science":      "Top 5 biggest health, medicine, and science news breaking right now? Title + one sentence each.",
+    "energy_resources":    "Top 5 biggest oil, gas, and energy sector news right now? Title + one sentence each.",
+    "politics_policy":     "Top 5 most significant political news and policy decisions right now? Title + one sentence each.",
+    "innovation_space":    "Top 5 biggest space exploration and emerging technology news right now? Title + one sentence each.",
+    "culture_society":     "Top 5 most viral entertainment and sports stories right now? Title + one sentence each.",
 }
 
 
@@ -179,7 +269,7 @@ def fetch_hackernews(limit=8):
                         "url": story.get("url", f"https://news.ycombinator.com/item?id={story['id']}"),
                         "published": "",
                         "score": story.get("score", 0),
-                        "category": "technology",
+                        "category": "technology_ai",
                     })
         return articles[:limit]
     except Exception as e:
@@ -219,7 +309,7 @@ def fetch_ap_rss(max_articles=8):
                 "description": e.get("summary", ""),
                 "url": e.get("link", ""),
                 "published": e.get("published", ""),
-                "category": "world news",
+                "category": "geopolitical",
             }
             for e in feed.entries[:max_articles]
         ]
@@ -232,12 +322,16 @@ def fetch_ap_rss(max_articles=8):
 def fetch_perplexity(topic=None, max_results=6):
     if not PERPLEXITY_API_KEY:
         return []
-    query = (
-        f"What are the top 5 latest breaking news headlines about '{topic}' right now? "
-        "For each give: title and one-sentence description."
-        if topic
-        else "What are the top 10 most important world news headlines right now? "
-             "For each give: title and one-sentence description."
+    # Use category-specific query if available, else generic
+    query = CATEGORY_PERPLEXITY_QUERIES.get(
+        topic,
+        (
+            f"Top 5 latest breaking news headlines about '{topic}' right now? "
+            "For each give: title and one-sentence description."
+            if topic
+            else "Top 10 most important world news headlines right now? "
+                 "For each give: title and one-sentence description."
+        )
     )
     try:
         resp = requests.post(
@@ -284,12 +378,16 @@ def fetch_perplexity(topic=None, max_results=6):
 def fetch_gemini_news(topic=None, max_results=6):
     if not GEMINI_API_KEY:
         return []
-    query = (
-        f"What are the top 5 latest news headlines about '{topic}' right now? "
-        "List as numbered items: title and one sentence summary."
-        if topic
-        else "What are the top 10 world news headlines right now? "
-             "List as numbered items: title and one sentence summary."
+    # Use category-specific query if available, else generic
+    query = CATEGORY_GEMINI_QUERIES.get(
+        topic,
+        (
+            f"Top 5 latest news headlines about '{topic}' right now? "
+            "List as numbered items: title and one sentence summary."
+            if topic
+            else "Top 10 world news headlines right now? "
+                 "List as numbered items: title and one sentence summary."
+        )
     )
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -346,19 +444,19 @@ def fetch_all_news(topic=None):
     """Fetch from all available sources for a given topic."""
     all_articles = []
 
-    all_articles += fetch_currents(category=topic if topic in CATEGORIES else None, max_articles=6)
-    all_articles += fetch_guardian(topic=topic, max_articles=6)
-    all_articles += fetch_newsdata(topic=topic, max_articles=6)
+    currents_cat = CURRENTS_CATEGORY_MAP.get(topic)
+    all_articles += fetch_currents(category=currents_cat, max_articles=6)
+    all_articles += fetch_guardian(topic=CATEGORY_GUARDIAN_QUERIES.get(topic, topic), max_articles=6)
+    all_articles += fetch_newsdata(topic=CATEGORY_NEWSDATA_QUERIES.get(topic, topic), max_articles=6)
     all_articles += fetch_bbc_rss(category=topic or "general", max_articles=5)
     all_articles += fetch_ap_rss(max_articles=5)
 
     subreddit = REDDIT_SUBREDDITS.get(topic, "worldnews") if topic else "worldnews"
     all_articles += fetch_reddit(subreddit=subreddit, limit=6)
 
-    if not topic or topic in ("technology", "science"):
+    if not topic or topic in ("technology_ai", "innovation_space"):
         all_articles += fetch_hackernews(limit=5)
 
-    # AI-powered live search (only runs if keys are set)
     all_articles += fetch_perplexity(topic=topic, max_results=5)
     all_articles += fetch_gemini_news(topic=topic, max_results=5)
 
@@ -371,23 +469,17 @@ def fetch_by_category():
 
     for category in CATEGORIES:
         articles = []
-        articles += fetch_currents(category=category, max_articles=4)
-        articles += fetch_guardian(topic=category, max_articles=4)
-        articles += fetch_newsdata(topic=category, max_articles=4)
+        articles += fetch_currents(category=CURRENTS_CATEGORY_MAP.get(category), max_articles=4)
+        articles += fetch_guardian(topic=CATEGORY_GUARDIAN_QUERIES.get(category, category), max_articles=4)
+        articles += fetch_newsdata(topic=CATEGORY_NEWSDATA_QUERIES.get(category, category), max_articles=4)
         articles += fetch_bbc_rss(category=category, max_articles=4)
-        subreddit = REDDIT_SUBREDDITS.get(category, "news")
-        articles += fetch_reddit(subreddit=subreddit, limit=4)
-        if category == "technology":
+        articles += fetch_reddit(subreddit=REDDIT_SUBREDDITS.get(category, "news"), limit=4)
+        if category in ("technology_ai", "innovation_space"):
             articles += fetch_hackernews(limit=4)
+        if category in ("geopolitical", "politics_policy"):
+            articles += fetch_ap_rss(max_articles=4)
+        articles += fetch_gemini_news(topic=category, max_results=4)
+        articles += fetch_perplexity(topic=category, max_results=4)
         grouped[category] = articles
-
-    # World news: richest category — pulls from everything
-    grouped["world news"] = (
-        fetch_ap_rss(max_articles=6)
-        + fetch_bbc_rss(category="world news", max_articles=6)
-        + fetch_reddit(subreddit="worldnews", limit=6)
-        + fetch_gemini_news(topic="world news today", max_results=4)
-        + fetch_perplexity(topic="top world news today", max_results=4)
-    )
 
     return grouped

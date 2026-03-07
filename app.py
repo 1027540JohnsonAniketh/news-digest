@@ -15,6 +15,9 @@ from news_fetcher import (
     fetch_newsdata, fetch_hackernews, fetch_bbc_rss,
     fetch_ap_rss, fetch_perplexity, fetch_gemini_news,
     CATEGORIES, REDDIT_SUBREDDITS,
+    CURRENTS_CATEGORY_MAP,
+    CATEGORY_GUARDIAN_QUERIES, CATEGORY_NEWSDATA_QUERIES,
+    CATEGORY_GEMINI_QUERIES, CATEGORY_PERPLEXITY_QUERIES,
 )
 from summarizer import summarize_topic, summarize_all_categories, generate_overall_digest
 
@@ -51,68 +54,98 @@ def full_digest():
     return jsonify({"overall_digest": overall, "categories": summaries})
 
 
-# ── API: Full digest — streaming SSE ─────────────────────────────────────────
+# ── API: Shared SSE generator ─────────────────────────────────────────────────
+
+def _overview_generator():
+    """SSE generator for the full overview stream.
+    Yields per-category fetch status, per-category summarized data (for live
+    card reveals), then the final overall digest.
+    """
+    categories_to_process = CATEGORIES
+    total = len(categories_to_process)
+    yield sse({"status": "start", "total": total})
+
+    grouped = {}
+
+    # ── Phase 1: Fetch per category ───────────────────────────────────────────
+    for i, category in enumerate(categories_to_process):
+        yield sse({"status": "fetching", "source": category})
+
+        articles = []
+        articles += fetch_currents(category=CURRENTS_CATEGORY_MAP.get(category), max_articles=4)
+        articles += fetch_guardian(topic=CATEGORY_GUARDIAN_QUERIES.get(category, category), max_articles=4)
+        articles += fetch_newsdata(topic=CATEGORY_NEWSDATA_QUERIES.get(category, category), max_articles=4)
+        articles += fetch_bbc_rss(category=category, max_articles=4)
+        articles += fetch_reddit(subreddit=REDDIT_SUBREDDITS.get(category, "news"), limit=4)
+        if category in ("technology_ai", "innovation_space"):
+            articles += fetch_hackernews(limit=4)
+        if category in ("geopolitical", "politics_policy"):
+            articles += fetch_ap_rss(max_articles=4)
+        articles += fetch_gemini_news(topic=category, max_results=4)
+        articles += fetch_perplexity(topic=category, max_results=4)
+
+        grouped[category] = articles
+        yield sse({
+            "status": "fetched",
+            "source": category,
+            "count": len(articles),
+            "progress": round((i + 1) / total * 50),   # 0–50% during fetch phase
+        })
+
+    # ── Phase 2: Summarize per category (with live data for card reveals) ─────
+    summaries = {}
+    for i, (category, articles) in enumerate(grouped.items()):
+        yield sse({"status": "summarizing", "source": category})
+        summary_data = summarize_topic(category, articles)
+        cat_summary = {
+            **summary_data,
+            "article_count": len(articles),
+            "articles": [
+                {
+                    "title": a.get("title", ""),
+                    "url": a.get("url", ""),
+                    "source": a.get("source", ""),
+                    "published": a.get("published", ""),
+                }
+                for a in articles[:5]
+            ],
+        }
+        summaries[category] = cat_summary
+
+        # Send per-category data immediately so JS can swap skeleton → real card
+        yield sse({
+            "status": "summarized",
+            "source": category,
+            "sentiment": summary_data.get("sentiment", "neutral"),
+            "data": cat_summary,                        # ← live card reveal payload
+            "progress": 50 + round((i + 1) / total * 40),  # 50–90% during summarize phase
+        })
+
+    # ── Phase 3: Overall digest ───────────────────────────────────────────────
+    yield sse({"status": "summarizing", "source": "Overall Digest"})
+    overall = generate_overall_digest(summaries)
+    yield sse({
+        "status": "complete",
+        "data": {"overall_digest": overall, "categories": summaries},
+    })
+
+
+# ── API: Overview / Digest — streaming SSE ────────────────────────────────────
 
 @app.route("/api/digest/stream", methods=["GET"])
 def digest_stream():
-    def generate():
-        categories_to_process = CATEGORIES + ["world news"]
-        yield sse({"status": "start", "total": len(categories_to_process)})
-
-        grouped = {}
-
-        # ── Phase 1: Fetch per category ───────────────────────────────────────
-        for category in categories_to_process:
-            yield sse({"status": "fetching", "source": category.title()})
-
-            articles = []
-            articles += fetch_currents(category=category if category in CATEGORIES else None, max_articles=4)
-            articles += fetch_guardian(topic=category, max_articles=4)
-            articles += fetch_newsdata(topic=category, max_articles=4)
-            articles += fetch_bbc_rss(category=category, max_articles=4)
-            subreddit = REDDIT_SUBREDDITS.get(category, "news")
-            articles += fetch_reddit(subreddit=subreddit, limit=4)
-            if category == "technology":
-                articles += fetch_hackernews(limit=4)
-            if category == "world news":
-                articles += fetch_ap_rss(max_articles=5)
-                articles += fetch_gemini_news(topic="world news today", max_results=4)
-                articles += fetch_perplexity(topic="top world news today", max_results=4)
-
-            grouped[category] = articles
-            yield sse({"status": "fetched", "source": category.title(), "count": len(articles)})
-
-        # ── Phase 2: Summarize per category ──────────────────────────────────
-        summaries = {}
-        for category, articles in grouped.items():
-            yield sse({"status": "summarizing", "source": category.title()})
-            summary_data = summarize_topic(category, articles)
-            summaries[category] = {
-                **summary_data,
-                "article_count": len(articles),
-                "articles": [
-                    {
-                        "title": a.get("title", ""),
-                        "url": a.get("url", ""),
-                        "source": a.get("source", ""),
-                        "published": a.get("published", ""),
-                    }
-                    for a in articles[:5]
-                ],
-            }
-            yield sse({
-                "status": "summarized",
-                "source": category.title(),
-                "sentiment": summary_data.get("sentiment", "neutral"),
-            })
-
-        # ── Phase 3: Overall digest ───────────────────────────────────────────
-        yield sse({"status": "summarizing", "source": "Overall Digest"})
-        overall = generate_overall_digest(summaries)
-        yield sse({"status": "complete", "data": {"overall_digest": overall, "categories": summaries}})
-
     return Response(
-        stream_with_context(generate()),
+        stream_with_context(_overview_generator()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+@app.route("/api/overview/stream", methods=["GET"])
+def overview_stream():
+    """Alias for digest_stream — cleaner URL semantics for the auto-load dashboard."""
+    return Response(
+        stream_with_context(_overview_generator()),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
@@ -150,15 +183,14 @@ def topic_stream():
     def generate():
         all_articles = []
 
-        # Each (label, callable) pair — callable returns list of articles
         source_fetchers = [
-            ("Currents API",  lambda: fetch_currents(category=topic if topic in CATEGORIES else None, max_articles=6)),
-            ("The Guardian",  lambda: fetch_guardian(topic=topic, max_articles=6)),
-            ("NewsData.io",   lambda: fetch_newsdata(topic=topic, max_articles=6)),
+            ("Currents API",  lambda: fetch_currents(category=CURRENTS_CATEGORY_MAP.get(topic), max_articles=6)),
+            ("The Guardian",  lambda: fetch_guardian(topic=CATEGORY_GUARDIAN_QUERIES.get(topic, topic), max_articles=6)),
+            ("NewsData.io",   lambda: fetch_newsdata(topic=CATEGORY_NEWSDATA_QUERIES.get(topic, topic), max_articles=6)),
             ("BBC News",      lambda: fetch_bbc_rss(category=topic or "general", max_articles=5)),
             ("AP News",       lambda: fetch_ap_rss(max_articles=5)),
             ("Reddit",        lambda: fetch_reddit(subreddit=REDDIT_SUBREDDITS.get(topic, "worldnews"), limit=6)),
-            ("Hacker News",   lambda: fetch_hackernews(limit=5) if not topic or topic in ("technology", "science") else []),
+            ("Hacker News",   lambda: fetch_hackernews(limit=5) if topic in ("technology_ai", "innovation_space") else []),
             ("Perplexity",    lambda: fetch_perplexity(topic=topic, max_results=5)),
             ("Gemini Search", lambda: fetch_gemini_news(topic=topic, max_results=5)),
         ]

@@ -3,74 +3,83 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-  <title>News Digest</title>
+  <title>World Pulse</title>
 
   <!-- PWA -->
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#1a1f2e" />
+  <meta name="theme-color" content="#0a0d14" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="News Digest" />
+  <meta name="apple-mobile-web-app-title" content="World Pulse" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <header>
+  <!-- Top progress bar (fixed) -->
+  <div id="progressBar" class="progress-bar hidden">
+    <div id="progressFill" class="progress-fill"></div>
+  </div>
+
+  <!-- Sticky header -->
+  <header class="site-header">
     <div class="header-inner">
-      <h1>News Digest</h1>
-      <p class="subtitle">Real-time news summarized by AI</p>
+      <div class="header-brand">
+        <span id="livePulse" class="live-pulse hidden"></span>
+        <h1 class="site-title">World Pulse</h1>
+        <span class="site-subtitle">AI-powered live news digest</span>
+      </div>
+      <div class="header-controls">
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="Search a topic…" autocomplete="off" />
+          <button id="searchBtn">Search</button>
+        </div>
+        <button id="refreshBtn" class="refresh-btn" title="Refresh digest">⟳</button>
+        <span id="lastUpdated" class="last-updated"></span>
+      </div>
     </div>
   </header>
 
   <main>
 
-    <!-- Search bar -->
-    <section class="search-section">
-      <div class="search-box">
-        <input type="text" id="searchInput" placeholder="Search a topic e.g. climate, AI, elections..." />
-        <button id="searchBtn">Search</button>
-      </div>
-    </section>
-
-    <!-- Full digest button -->
-    <section class="digest-controls">
-      <button id="digestBtn" class="digest-btn">Load Full News Digest</button>
-      <span class="hint">Fetches & summarizes all categories — takes ~30 seconds</span>
-    </section>
-
-    <!-- Loading spinner + live status feed -->
-    <div id="loader" class="loader hidden">
-      <div class="spinner"></div>
-      <p id="loaderText">Fetching and summarizing news...</p>
-      <div id="statusFeed" class="status-feed"></div>
-    </div>
-
     <!-- Error message -->
     <div id="errorBox" class="error-box hidden"></div>
 
-    <!-- Overall digest banner -->
-    <section id="overallSection" class="overall-section hidden">
-      <h2>Today's Overview</h2>
-      <p id="overallText"></p>
+    <!-- Loading status feed (used for topic search) -->
+    <div id="loader" class="loader hidden">
+      <div class="spinner"></div>
+      <p id="loaderText">Fetching and summarizing news…</p>
+      <div id="statusFeed" class="status-feed"></div>
+    </div>
+
+    <!-- Hero overall digest banner -->
+    <section id="heroSection" class="hero-section hidden">
+      <div class="hero-inner">
+        <div class="hero-label">🌐 World Pulse</div>
+        <p id="heroText" class="hero-text"></p>
+      </div>
     </section>
 
-    <!-- Topic search result -->
+    <!-- Topic search result card -->
     <section id="topicResult" class="topic-result hidden">
       <div id="topicCard"></div>
     </section>
 
-    <!-- Category grid -->
-    <section id="categoryGrid" class="category-grid hidden">
-      <h2>All Categories</h2>
-      <div id="gridContainer"></div>
+    <!-- Category bento grid -->
+    <section id="categoryGrid" class="category-grid">
+      <div id="gridContainer" class="grid-container"></div>
     </section>
 
   </main>
 
-  <footer>
+  <footer class="site-footer">
     <p>Sources: Currents API &bull; The Guardian &bull; NewsData.io &bull; BBC News &bull; AP News &bull; Reddit &bull; Hacker News &bull; Perplexity &bull; Gemini &bull; Summarized by Claude AI</p>
   </footer>
 

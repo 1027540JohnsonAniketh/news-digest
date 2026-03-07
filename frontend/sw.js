@@ -1,4 +1,4 @@
-const CACHE_NAME = "news-digest-v2";
+const CACHE_NAME = "news-digest-v3";
 
 // Static assets to cache for offline shell
 const STATIC_ASSETS = [
