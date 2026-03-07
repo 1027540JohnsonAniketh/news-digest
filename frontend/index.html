@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>News Digest</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <h1>News Digest</h1>
+      <p class="subtitle">Real-time news summarized by AI</p>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Search bar -->
+    <section class="search-section">
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Search a topic e.g. climate, AI, elections..." />
+        <button id="searchBtn">Search</button>
+      </div>
+    </section>
+
+    <!-- Full digest button -->
+    <section class="digest-controls">
+      <button id="digestBtn" class="digest-btn">Load Full News Digest</button>
+      <span class="hint">Fetches & summarizes all categories — takes ~30 seconds</span>
+    </section>
+
+    <!-- Loading spinner -->
+    <div id="loader" class="loader hidden">
+      <div class="spinner"></div>
+      <p id="loaderText">Fetching and summarizing news...</p>
+    </div>
+
+    <!-- Error message -->
+    <div id="errorBox" class="error-box hidden"></div>
+
+    <!-- Overall digest banner -->
+    <section id="overallSection" class="overall-section hidden">
+      <h2>Today's Overview</h2>
+      <p id="overallText"></p>
+    </section>
+
+    <!-- Topic search result -->
+    <section id="topicResult" class="topic-result hidden">
+      <div id="topicCard"></div>
+    </section>
+
+    <!-- Category grid -->
+    <section id="categoryGrid" class="category-grid hidden">
+      <h2>All Categories</h2>
+      <div id="gridContainer"></div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Sources: Currents API &bull; The Guardian &bull; Reddit &bull; Summarized by Claude AI</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
