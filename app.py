@@ -1,21 +1,35 @@
 import os
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Always load .env from the same directory as this file
 load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 
-from news_fetcher import fetch_all_news, fetch_by_category
+from news_fetcher import (
+    fetch_all_news, fetch_by_category,
+    fetch_currents, fetch_guardian, fetch_reddit,
+    fetch_newsdata, fetch_hackernews, fetch_bbc_rss,
+    fetch_ap_rss, fetch_perplexity, fetch_gemini_news,
+    CATEGORIES, REDDIT_SUBREDDITS,
+)
 from summarizer import summarize_topic, summarize_all_categories, generate_overall_digest
 
 app = Flask(__name__, static_folder="frontend")
 CORS(app)
 
 
-# ── Static frontend ──────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def sse(data: dict) -> str:
+    """Format a dict as an SSE message."""
+    return f"data: {json.dumps(data)}\n\n"
+
+
+# ── Static frontend ───────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -27,91 +41,186 @@ def static_files(filename):
     return send_from_directory("frontend", filename)
 
 
-# ── API: Full digest (all categories) ────────────────────────────────────────
+# ── API: Full digest — batch (kept for backward compat) ───────────────────────
 
 @app.route("/api/digest", methods=["GET"])
 def full_digest():
-    """
-    Fetches news from all sources across all categories,
-    summarizes each, and returns a full digest.
-    """
-    print("Fetching news by category...")
     grouped = fetch_by_category()
-
-    print("Summarizing all categories...")
     summaries = summarize_all_categories(grouped)
-
-    print("Generating overall digest...")
     overall = generate_overall_digest(summaries)
-
-    return jsonify({
-        "overall_digest": overall,
-        "categories": summaries,
-    })
+    return jsonify({"overall_digest": overall, "categories": summaries})
 
 
-# ── API: Single topic search ──────────────────────────────────────────────────
+# ── API: Full digest — streaming SSE ─────────────────────────────────────────
+
+@app.route("/api/digest/stream", methods=["GET"])
+def digest_stream():
+    def generate():
+        categories_to_process = CATEGORIES + ["world news"]
+        yield sse({"status": "start", "total": len(categories_to_process)})
+
+        grouped = {}
+
+        # ── Phase 1: Fetch per category ───────────────────────────────────────
+        for category in categories_to_process:
+            yield sse({"status": "fetching", "source": category.title()})
+
+            articles = []
+            articles += fetch_currents(category=category if category in CATEGORIES else None, max_articles=4)
+            articles += fetch_guardian(topic=category, max_articles=4)
+            articles += fetch_newsdata(topic=category, max_articles=4)
+            articles += fetch_bbc_rss(category=category, max_articles=4)
+            subreddit = REDDIT_SUBREDDITS.get(category, "news")
+            articles += fetch_reddit(subreddit=subreddit, limit=4)
+            if category == "technology":
+                articles += fetch_hackernews(limit=4)
+            if category == "world news":
+                articles += fetch_ap_rss(max_articles=5)
+                articles += fetch_gemini_news(topic="world news today", max_results=4)
+                articles += fetch_perplexity(topic="top world news today", max_results=4)
+
+            grouped[category] = articles
+            yield sse({"status": "fetched", "source": category.title(), "count": len(articles)})
+
+        # ── Phase 2: Summarize per category ──────────────────────────────────
+        summaries = {}
+        for category, articles in grouped.items():
+            yield sse({"status": "summarizing", "source": category.title()})
+            summary_data = summarize_topic(category, articles)
+            summaries[category] = {
+                **summary_data,
+                "article_count": len(articles),
+                "articles": [
+                    {
+                        "title": a.get("title", ""),
+                        "url": a.get("url", ""),
+                        "source": a.get("source", ""),
+                        "published": a.get("published", ""),
+                    }
+                    for a in articles[:5]
+                ],
+            }
+            yield sse({
+                "status": "summarized",
+                "source": category.title(),
+                "sentiment": summary_data.get("sentiment", "neutral"),
+            })
+
+        # ── Phase 3: Overall digest ───────────────────────────────────────────
+        yield sse({"status": "summarizing", "source": "Overall Digest"})
+        overall = generate_overall_digest(summaries)
+        yield sse({"status": "complete", "data": {"overall_digest": overall, "categories": summaries}})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+# ── API: Topic search — batch (kept for backward compat) ──────────────────────
 
 @app.route("/api/topic", methods=["GET"])
 def topic_search():
-    """
-    Search for a specific topic and get a summary.
-    Query param: ?q=your+topic
-    """
     topic = request.args.get("q", "").strip()
     if not topic:
         return jsonify({"error": "Please provide a topic via ?q=your_topic"}), 400
-
-    print(f"Fetching news for topic: {topic}")
     articles = fetch_all_news(topic=topic)
-
-    print(f"Summarizing {len(articles)} articles for '{topic}'...")
     summary = summarize_topic(topic, articles)
-
     return jsonify({
         "topic": topic,
         **summary,
         "article_count": len(articles),
         "articles": [
-            {
-                "title": a.get("title", ""),
-                "url": a.get("url", ""),
-                "source": a.get("source", ""),
-                "published": a.get("published", ""),
-            }
+            {"title": a.get("title", ""), "url": a.get("url", ""),
+             "source": a.get("source", ""), "published": a.get("published", "")}
             for a in articles[:6]
         ],
     })
 
 
-# ── API: Raw articles (no summarization) ─────────────────────────────────────
+# ── API: Topic search — streaming SSE ────────────────────────────────────────
+
+@app.route("/api/topic/stream", methods=["GET"])
+def topic_stream():
+    topic = request.args.get("q", "").strip()
+    if not topic:
+        return jsonify({"error": "Please provide ?q=topic"}), 400
+
+    def generate():
+        all_articles = []
+
+        # Each (label, callable) pair — callable returns list of articles
+        source_fetchers = [
+            ("Currents API",  lambda: fetch_currents(category=topic if topic in CATEGORIES else None, max_articles=6)),
+            ("The Guardian",  lambda: fetch_guardian(topic=topic, max_articles=6)),
+            ("NewsData.io",   lambda: fetch_newsdata(topic=topic, max_articles=6)),
+            ("BBC News",      lambda: fetch_bbc_rss(category=topic or "general", max_articles=5)),
+            ("AP News",       lambda: fetch_ap_rss(max_articles=5)),
+            ("Reddit",        lambda: fetch_reddit(subreddit=REDDIT_SUBREDDITS.get(topic, "worldnews"), limit=6)),
+            ("Hacker News",   lambda: fetch_hackernews(limit=5) if not topic or topic in ("technology", "science") else []),
+            ("Perplexity",    lambda: fetch_perplexity(topic=topic, max_results=5)),
+            ("Gemini Search", lambda: fetch_gemini_news(topic=topic, max_results=5)),
+        ]
+
+        for source_name, fetch_fn in source_fetchers:
+            yield sse({"status": "fetching", "source": source_name})
+            try:
+                articles = fetch_fn()
+                all_articles.extend(articles)
+                yield sse({"status": "fetched", "source": source_name, "count": len(articles)})
+            except Exception as e:
+                yield sse({"status": "error", "source": source_name, "error": str(e)})
+
+        yield sse({"status": "summarizing", "source": "Claude AI"})
+        summary = summarize_topic(topic, all_articles)
+        yield sse({
+            "status": "complete",
+            "data": {
+                "topic": topic,
+                **summary,
+                "article_count": len(all_articles),
+                "articles": [
+                    {"title": a.get("title", ""), "url": a.get("url", ""),
+                     "source": a.get("source", ""), "published": a.get("published", "")}
+                    for a in all_articles[:6]
+                ],
+            },
+        })
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+# ── API: Raw articles ─────────────────────────────────────────────────────────
 
 @app.route("/api/articles", methods=["GET"])
 def raw_articles():
-    """
-    Returns raw articles for a topic without AI summarization.
-    Query param: ?q=your+topic
-    """
     topic = request.args.get("q", "").strip() or None
     articles = fetch_all_news(topic=topic)
     return jsonify({"articles": articles, "count": len(articles)})
 
 
-# ── Health check ─────────────────────────────────────────────────────────────
+# ── Health check ──────────────────────────────────────────────────────────────
 
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({
         "status": "ok",
         "keys": {
-            "currents": bool(os.getenv("CURRENTS_API_KEY")),
-            "guardian": bool(os.getenv("GUARDIAN_API_KEY")),
-            "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
-        }
+            "currents":   bool(os.getenv("CURRENTS_API_KEY")),
+            "guardian":   bool(os.getenv("GUARDIAN_API_KEY")),
+            "anthropic":  bool(os.getenv("ANTHROPIC_API_KEY")),
+            "newsdata":   bool(os.getenv("NEWSDATA_API_KEY")),
+            "perplexity": bool(os.getenv("PERPLEXITY_API_KEY")),
+            "gemini":     bool(os.getenv("GEMINI_API_KEY")),
+        },
     })
 
 
 if __name__ == "__main__":
-    # debug=True only locally; Render uses gunicorn so this block won't run there
     port = int(os.environ.get("PORT", 8080))
     app.run(debug=True, host="0.0.0.0", port=port)

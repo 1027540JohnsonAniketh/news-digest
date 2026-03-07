@@ -110,6 +110,91 @@ main {
 .loader p { color: #718096; }
 .hidden { display: none !important; }
 
+/* ── Status feed ─────────────────────────────── */
+.status-feed {
+  margin-top: 1.5rem;
+  width: 100%;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: left;
+  border: 1px solid #2d3748;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #1a202c;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid #2d3748;
+  animation: slideIn 0.18s ease;
+  transition: background 0.2s;
+}
+
+.status-item:last-child { border-bottom: none; }
+
+.status-item.active  { background: #1e2d45; }
+.status-item.done    { background: transparent; }
+.status-item.errored { background: #2d1b1b; }
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.status-icon {
+  font-size: 0.95rem;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.status-icon.spin {
+  display: inline-block;
+  animation: spin 0.7s linear infinite;
+}
+
+.status-name {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #a0aec0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-name.active { color: #63b3ed; }
+.status-name.done   { color: #68d391; }
+.status-name.error  { color: #fc8181; }
+.status-name.ai     { color: #b794f4; }
+
+.status-detail {
+  font-size: 0.75rem;
+  color: #4a5568;
+  white-space: nowrap;
+}
+
+.status-detail.ok     { color: #48bb78; }
+.status-detail.ai     { color: #9f7aea; }
+
+/* sentiment mini-badges inside status feed */
+.status-sentiment {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ss-positive  { background: #1c4532; color: #68d391; }
+.ss-negative  { background: #3b1c1c; color: #fc8181; }
+.ss-mixed     { background: #3b2b1c; color: #f6ad55; }
+.ss-neutral   { background: #2d3748; color: #a0aec0; }
+
 /* ── Error ───────────────────────────────────── */
 .error-box {
   background: #2d1b1b;
