@@ -5,6 +5,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"      # Pin to stable Python — avoids 3.14 incompatibility
       - key: CURRENTS_API_KEY
         sync: false          # You'll paste this in Render dashboard
       - key: GUARDIAN_API_KEY
