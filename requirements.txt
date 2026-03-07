@@ -5,4 +5,3 @@ anthropic>=0.50.0
 python-dotenv==1.0.1
 gunicorn==22.0.0
 feedparser==6.0.11
-gevent==24.2.1
