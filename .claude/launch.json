@@ -5,7 +5,7 @@
       "name": "News Digest (Flask)",
       "runtimeExecutable": "python3.9",
       "runtimeArgs": ["app.py"],
-      "port": 8080,
+      "port": 9090,
       "autoPort": true
     }
   ]
