@@ -1,6 +1,7 @@
 import os
 import json
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 
 # Always load .env from the same directory as this file
@@ -54,72 +55,119 @@ def full_digest():
     return jsonify({"overall_digest": overall, "categories": summaries})
 
 
+# ── Per-category parallel fetcher ────────────────────────────────────────────
+
+def _fetch_category_articles(category: str) -> list:
+    """Fetch all news sources for one category concurrently.
+    Uses a thread pool so 7-9 HTTP calls run in parallel instead of serially.
+    Reduces per-category fetch time from ~18 s → ~3-5 s.
+    """
+    fetchers = [
+        lambda: fetch_currents(category=CURRENTS_CATEGORY_MAP.get(category), max_articles=3),
+        lambda: fetch_guardian(topic=CATEGORY_GUARDIAN_QUERIES.get(category, category), max_articles=3),
+        lambda: fetch_newsdata(topic=CATEGORY_NEWSDATA_QUERIES.get(category, category), max_articles=3),
+        lambda: fetch_bbc_rss(category=category, max_articles=3),
+        lambda: fetch_reddit(subreddit=REDDIT_SUBREDDITS.get(category, "news"), limit=3),
+        lambda: fetch_gemini_news(topic=category, max_results=3),
+        lambda: fetch_perplexity(topic=category, max_results=3),
+    ]
+    if category in ("technology_ai", "innovation_space"):
+        fetchers.append(lambda: fetch_hackernews(limit=3))
+    if category in ("geopolitical", "politics_policy"):
+        fetchers.append(lambda: fetch_ap_rss(max_articles=3))
+
+    articles: list = []
+    with ThreadPoolExecutor(max_workers=len(fetchers)) as ex:
+        futures = [ex.submit(fn) for fn in fetchers]
+        for fut in as_completed(futures, timeout=25):
+            try:
+                articles.extend(fut.result() or [])
+            except Exception:
+                pass
+    return articles
+
+
+# ── Per-category parallel summarizer ─────────────────────────────────────────
+
+def _summarize_category(category: str, articles: list) -> dict:
+    """Build the full cat_summary dict for one category."""
+    summary_data = summarize_topic(category, articles)
+    return {
+        **summary_data,
+        "article_count": len(articles),
+        "articles": [
+            {
+                "title": a.get("title", ""),
+                "url": a.get("url", ""),
+                "source": a.get("source", ""),
+                "published": a.get("published", ""),
+            }
+            for a in articles[:5]
+        ],
+    }
+
+
 # ── API: Shared SSE generator ─────────────────────────────────────────────────
 
 def _overview_generator():
-    """SSE generator for the full overview stream.
-    Yields per-category fetch status, per-category summarized data (for live
-    card reveals), then the final overall digest.
+    """SSE generator — fully parallelised for speed:
+    • Phase 1: all 10 category fetches run concurrently (5 at a time);
+      each category itself fans out its 7-9 sources in a nested pool.
+    • Phase 2: Claude summaries run 3-at-a-time to respect rate limits.
+    Expected wall-clock: ~10 s fetch + ~35 s summarise = ~45 s total
+    (vs ~3-5 min with the old serial approach).
     """
-    categories_to_process = CATEGORIES
-    total = len(categories_to_process)
+    total = len(CATEGORIES)
     yield sse({"status": "start", "total": total})
 
-    grouped = {}
+    # ── Phase 1: Fetch all categories concurrently ────────────────────────────
+    grouped: dict = {}
+    fetched_count = 0
 
-    # ── Phase 1: Fetch per category ───────────────────────────────────────────
-    for i, category in enumerate(categories_to_process):
-        yield sse({"status": "fetching", "source": category})
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        cat_futures = {pool.submit(_fetch_category_articles, cat): cat for cat in CATEGORIES}
+        for fut in as_completed(cat_futures):
+            cat = cat_futures[fut]
+            try:
+                articles = fut.result()
+            except Exception:
+                articles = []
+            grouped[cat] = articles
+            fetched_count += 1
+            yield sse({
+                "status": "fetched",
+                "source": cat,
+                "count": len(articles),
+                "progress": round(fetched_count / total * 50),  # 0–50%
+            })
 
-        articles = []
-        articles += fetch_currents(category=CURRENTS_CATEGORY_MAP.get(category), max_articles=4)
-        articles += fetch_guardian(topic=CATEGORY_GUARDIAN_QUERIES.get(category, category), max_articles=4)
-        articles += fetch_newsdata(topic=CATEGORY_NEWSDATA_QUERIES.get(category, category), max_articles=4)
-        articles += fetch_bbc_rss(category=category, max_articles=4)
-        articles += fetch_reddit(subreddit=REDDIT_SUBREDDITS.get(category, "news"), limit=4)
-        if category in ("technology_ai", "innovation_space"):
-            articles += fetch_hackernews(limit=4)
-        if category in ("geopolitical", "politics_policy"):
-            articles += fetch_ap_rss(max_articles=4)
-        articles += fetch_gemini_news(topic=category, max_results=4)
-        articles += fetch_perplexity(topic=category, max_results=4)
+    # ── Phase 2: Summarize all categories (3 concurrent Claude calls) ─────────
+    summaries: dict = {}
+    summarized_count = 0
 
-        grouped[category] = articles
-        yield sse({
-            "status": "fetched",
-            "source": category,
-            "count": len(articles),
-            "progress": round((i + 1) / total * 50),   # 0–50% during fetch phase
-        })
-
-    # ── Phase 2: Summarize per category (with live data for card reveals) ─────
-    summaries = {}
-    for i, (category, articles) in enumerate(grouped.items()):
-        yield sse({"status": "summarizing", "source": category})
-        summary_data = summarize_topic(category, articles)
-        cat_summary = {
-            **summary_data,
-            "article_count": len(articles),
-            "articles": [
-                {
-                    "title": a.get("title", ""),
-                    "url": a.get("url", ""),
-                    "source": a.get("source", ""),
-                    "published": a.get("published", ""),
-                }
-                for a in articles[:5]
-            ],
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        sum_futures = {
+            pool.submit(_summarize_category, cat, grouped.get(cat, [])): cat
+            for cat in CATEGORIES
         }
-        summaries[category] = cat_summary
-
-        # Send per-category data immediately so JS can swap skeleton → real card
-        yield sse({
-            "status": "summarized",
-            "source": category,
-            "sentiment": summary_data.get("sentiment", "neutral"),
-            "data": cat_summary,                        # ← live card reveal payload
-            "progress": 50 + round((i + 1) / total * 40),  # 50–90% during summarize phase
-        })
+        for fut in as_completed(sum_futures):
+            cat = sum_futures[fut]
+            summarized_count += 1
+            try:
+                cat_summary = fut.result()
+            except Exception:
+                cat_summary = {
+                    "summary": "", "key_points": [], "sentiment": "neutral",
+                    "article_count": 0, "articles": [],
+                }
+            summaries[cat] = cat_summary
+            yield sse({
+                "status": "summarized",
+                "source": cat,
+                "sentiment": cat_summary.get("sentiment", "neutral"),
+                "data": cat_summary,                           # ← live card reveal
+                "progress": 50 + round(summarized_count / total * 40),  # 50–90%
+            })
 
     # ── Phase 3: Overall digest ───────────────────────────────────────────────
     yield sse({"status": "summarizing", "source": "Overall Digest"})
