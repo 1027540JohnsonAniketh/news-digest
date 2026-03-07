@@ -1,4 +1,4 @@
-const CACHE_NAME = "news-digest-v1";
+const CACHE_NAME = "news-digest-v2";
 
 // Static assets to cache for offline shell
 const STATIC_ASSETS = [
@@ -34,7 +34,13 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Always fetch API calls from the network (live data)
+  // SSE streams MUST bypass the service worker entirely — wrapping them in
+  // respondWith(fetch()) causes buffering in some browsers which breaks streaming.
+  if (url.pathname.includes("/stream")) {
+    return; // let the browser handle SSE directly, no respondWith
+  }
+
+  // Always fetch other API calls from the network (live data)
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
       fetch(event.request).catch(() =>

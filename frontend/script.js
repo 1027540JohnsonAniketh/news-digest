@@ -81,16 +81,24 @@ function openStream(url, { onMessage, onError, loaderMsg }) {
   showLoader(loaderMsg || "Fetching live news…");
   clearFeed();
 
+  // Guard: if the server sends "complete" and closes the connection, browsers
+  // fire onerror right after. We track completion so we don't show a false
+  // "Connection failed" error when the stream ended successfully.
+  let streamCompleted = false;
+
   const es = new EventSource(url);
   es.onmessage = (event) => {
     let data;
     try { data = JSON.parse(event.data); } catch { return; }
+    if (data.status === "complete") streamCompleted = true;
     onMessage(data, es);
   };
   es.onerror = () => {
     es.close();
-    showError("Connection failed. Is the server running?");
-    if (onError) onError();
+    if (!streamCompleted) {
+      showError("Connection failed. Is the server running?");
+      if (onError) onError();
+    }
   };
 }
 
@@ -151,6 +159,7 @@ function doSearch() {
         hideLoader();
         topicCard.innerHTML = buildCard(data.data.topic || q, data.data);
         topicResult.classList.remove("hidden");
+        topicResult.scrollIntoView({ behavior: "smooth", block: "start" });
         searchBtn.disabled = false;
       }
     },
@@ -204,6 +213,7 @@ digestBtn.addEventListener("click", () => {
             gridContainer.innerHTML += buildCard(cat, catData);
           }
           categoryGrid.classList.remove("hidden");
+          categoryGrid.scrollIntoView({ behavior: "smooth", block: "start" });
         }
         digestBtn.disabled = false;
       }
