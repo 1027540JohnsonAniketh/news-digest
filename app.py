@@ -22,6 +22,7 @@ from news_fetcher import (
     CATEGORY_GEMINI_QUERIES, CATEGORY_PERPLEXITY_QUERIES,
 )
 from summarizer import summarize_topic, summarize_all_categories, generate_overall_digest
+from market_data import get_all_market_data, get_market_strip, get_category_etfs
 
 app = Flask(__name__, static_folder="frontend")
 CORS(app)
@@ -317,6 +318,30 @@ def topic_stream():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+# ── API: Market data (Yahoo Finance via yfinance) ────────────────────────────
+
+@app.route("/api/market", methods=["GET"])
+def market_data():
+    """Return live market data: global indices strip + per-category ETFs.
+    Cached 30 s server-side. Client auto-refreshes every 60 s.
+    """
+    try:
+        data = get_all_market_data()
+        return jsonify({"ok": True, **data})
+    except Exception as e:
+        print(f"[Market API] Error: {e}")
+        return jsonify({"ok": False, "error": str(e), "strip": [], "categories": {}}), 200
+
+
+@app.route("/api/market/strip", methods=["GET"])
+def market_strip():
+    """Return only the global indices strip (faster, for auto-refresh)."""
+    try:
+        return jsonify({"ok": True, "strip": get_market_strip()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "strip": []}), 200
 
 
 # ── API: Raw articles ─────────────────────────────────────────────────────────

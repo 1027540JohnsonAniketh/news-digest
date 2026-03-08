@@ -28,6 +28,13 @@
     <div id="progressFill" class="progress-fill"></div>
   </div>
 
+  <!-- Market ticker strip (below progress bar, above header) -->
+  <div id="marketStrip" class="market-strip hidden">
+    <div id="marketStripTrack" class="market-strip-track">
+      <!-- Chips injected by script.js — duplicated for seamless loop -->
+    </div>
+  </div>
+
   <!-- Sticky header -->
   <header class="site-header">
     <div class="header-inner">
@@ -80,7 +87,8 @@
   </main>
 
   <footer class="site-footer">
-    <p>Sources: Currents API &bull; The Guardian &bull; NewsData.io &bull; BBC News &bull; AP News &bull; Reddit &bull; Hacker News &bull; Perplexity &bull; Gemini &bull; Summarized by Claude AI</p>
+    <p>News: Currents API &bull; The Guardian &bull; NewsData.io &bull; BBC News &bull; AP News &bull; Reddit &bull; Hacker News &bull; Perplexity &bull; Gemini &bull; Summarized by Claude AI</p>
+    <p style="margin-top:0.4rem">Market data: Yahoo Finance &bull; Prices delayed 15 min &bull; For informational display only</p>
   </footer>
 
   <script src="script.js"></script>

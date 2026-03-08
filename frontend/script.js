@@ -1,5 +1,8 @@
 const API_BASE = "";   // relative — always matches the serving host
 
+// ── Market data globals ────────────────────────────────────────────────────
+let _marketRefreshTimer = null;
+
 // ── Category metadata ─────────────────────────────────────────────────────────
 
 const CATEGORY_META = {
@@ -141,9 +144,23 @@ function buildCard(title, data) {
 
 // ── Live card reveal (skeleton → real) ───────────────────────────────────────
 
+// Stores latest market data so newly-revealed cards can get ETF chips injected
+let _latestMarketCategories = {};
+
 function swapCardInGrid(catKey, data) {
   const existing = gridContainer.querySelector(`[data-category="${catKey}"]`);
   const newHTML = buildCategoryCard(catKey, data);
+
+  const _afterReveal = (newCard) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        newCard.classList.add("card-visible");
+        // Inject market ETF chips if we already have market data
+        const etfs = _latestMarketCategories[catKey];
+        if (etfs) injectEtfChipsIntoCard(catKey, etfs);
+      });
+    });
+  };
 
   if (existing) {
     const temp = document.createElement("div");
@@ -151,20 +168,14 @@ function swapCardInGrid(catKey, data) {
     const newCard = temp.firstElementChild;
     newCard.classList.add("card-reveal");
     existing.replaceWith(newCard);
-    // Trigger reflow then add visible class for fade-in
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => newCard.classList.add("card-visible"));
-    });
+    _afterReveal(newCard);
   } else {
-    // Category not in the grid yet — append
     const temp = document.createElement("div");
     temp.innerHTML = newHTML;
     const newCard = temp.firstElementChild;
     newCard.classList.add("card-reveal");
     gridContainer.appendChild(newCard);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => newCard.classList.add("card-visible"));
-    });
+    _afterReveal(newCard);
   }
 }
 
@@ -415,6 +426,129 @@ function resetResults() {
   hideLoader();
 }
 
+// ── Market data — ticker strip ────────────────────────────────────────────────
+
+const marketStrip      = document.getElementById("marketStrip");
+const marketStripTrack = document.getElementById("marketStripTrack");
+
+function fmtChange(pct) {
+  if (pct == null) return { text: "—", cls: "flat" };
+  const sign = pct >= 0 ? "+" : "";
+  const cls  = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
+  const arrow = pct > 0 ? "▲" : pct < 0 ? "▼" : "";
+  return { text: `${arrow} ${sign}${pct.toFixed(2)}%`, cls };
+}
+
+function buildTickerChip(t) {
+  const { text, cls } = fmtChange(t.change_pct);
+  return `
+    <div class="ticker-chip" title="${t.symbol}">
+      <span class="ticker-label">${t.label}</span>
+      <span class="ticker-price">${t.price_str ?? "—"}</span>
+      <span class="ticker-change ${cls}">${text}</span>
+    </div>`;
+}
+
+function renderMarketStrip(tickers) {
+  if (!tickers || !tickers.length) return;
+  // Filter out errored tickers with no price
+  const valid = tickers.filter(t => t.price != null);
+  if (!valid.length) return;
+
+  // Duplicate the list for seamless infinite scroll
+  const chipsHTML = valid.map(buildTickerChip).join("");
+  marketStripTrack.innerHTML = chipsHTML + chipsHTML;  // doubled
+  marketStrip.classList.remove("hidden");
+}
+
+// ── Market data — card ETF chips ─────────────────────────────────────────────
+
+function buildEtfChips(etfs) {
+  if (!etfs || !etfs.length) return "";
+  return etfs.map(t => {
+    if (t.price == null) return "";
+    const { text, cls } = fmtChange(t.change_pct);
+    return `
+      <div class="etf-chip" title="${t.symbol}">
+        <span class="etf-symbol">${t.symbol.replace("^","").replace("-USD","")}</span>
+        <span class="etf-label">${t.label}</span>
+        <span class="etf-price">${t.price_str}</span>
+        <span class="etf-change ${cls}">${text}</span>
+      </div>`;
+  }).join("");
+}
+
+function injectEtfChipsIntoCard(catKey, etfs) {
+  const card = gridContainer.querySelector(`[data-category="${catKey}"]`);
+  if (!card || card.classList.contains("card-skeleton")) return;
+
+  // Don't double-inject
+  if (card.querySelector(".card-market")) return;
+
+  const chipsHTML = buildEtfChips(etfs);
+  if (!chipsHTML) return;
+
+  const div = document.createElement("div");
+  div.className = "card-market";
+  div.innerHTML = chipsHTML;
+
+  // Insert right after the card-header
+  const header = card.querySelector(".card-header");
+  if (header) header.insertAdjacentElement("afterend", div);
+}
+
+function injectAllEtfChips(marketData) {
+  if (!marketData || !marketData.categories) return;
+  for (const [cat, etfs] of Object.entries(marketData.categories)) {
+    injectEtfChipsIntoCard(cat, etfs);
+  }
+}
+
+// ── Market data — fetch & auto-refresh ────────────────────────────────────────
+
+async function loadMarketData() {
+  try {
+    const res  = await fetch(`${API_BASE}/api/market`);
+    const data = await res.json();
+    if (!data.ok) return;
+
+    renderMarketStrip(data.strip);
+
+    // Cache categories so swapCardInGrid can inject chips on newly-revealed cards
+    if (data.categories) _latestMarketCategories = data.categories;
+    injectAllEtfChips(data);
+  } catch (e) {
+    console.warn("[Market] Fetch error:", e);
+  }
+}
+
+async function refreshMarketStrip() {
+  try {
+    const res  = await fetch(`${API_BASE}/api/market/strip`);
+    const data = await res.json();
+    if (data.ok && data.strip) renderMarketStrip(data.strip);
+  } catch { /* silent */ }
+}
+
+function startMarketRefresh() {
+  if (_marketRefreshTimer) clearInterval(_marketRefreshTimer);
+  // Full refresh every 60 s (strip + cards); strip-only every 30 s
+  _marketRefreshTimer = setInterval(async () => {
+    await refreshMarketStrip();
+  }, 30_000);
+
+  // Full re-inject every 2 min in case new cards were rendered
+  setInterval(async () => {
+    await loadMarketData();
+  }, 120_000);
+}
+
 // ── Auto-load on page open ────────────────────────────────────────────────────
 
-document.addEventListener("DOMContentLoaded", loadOverview);
+document.addEventListener("DOMContentLoaded", () => {
+  loadOverview();
+  // Load market data a beat after page load so news takes priority
+  setTimeout(() => {
+    loadMarketData().then(startMarketRefresh);
+  }, 800);
+});

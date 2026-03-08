@@ -29,10 +29,80 @@ body {
   box-shadow: 0 0 10px rgba(99, 179, 237, 0.7);
 }
 
+/* ── Market ticker strip ──────────────────────────────────────────────────── */
+.market-strip {
+  position: sticky;
+  top: 3px;            /* sits just below the 3px progress bar */
+  z-index: 99;
+  background: #07090f;
+  border-bottom: 1px solid #1a2035;
+  overflow: hidden;
+  height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.market-strip-track {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  animation: ticker-scroll 80s linear infinite;
+  will-change: transform;
+}
+
+.market-strip:hover .market-strip-track {
+  animation-play-state: paused;
+}
+
+@keyframes ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }  /* track is doubled, so 50% = one full pass */
+}
+
+.ticker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 1rem;
+  height: 32px;
+  border-right: 1px solid #1a2035;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+  cursor: default;
+  transition: background 0.15s;
+}
+
+.ticker-chip:hover { background: #10141f; }
+
+.ticker-label {
+  color: #4a6080;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: "Inter", sans-serif;
+}
+
+.ticker-price {
+  color: #c9d4e8;
+  font-weight: 600;
+}
+
+.ticker-change {
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.ticker-change.up   { color: #38c172; }
+.ticker-change.down { color: #e3342f; }
+.ticker-change.flat { color: #6b7280; }
+
+.ticker-arrow { font-size: 0.52rem; margin-right: 1px; }
+
 /* ── Sticky header ────────────────────────────────────────────────────────── */
 .site-header {
   position: sticky;
-  top: 3px;
+  top: 35px;           /* below progress bar (3px) + market strip (32px) */
   z-index: 100;
   background: rgba(10, 13, 20, 0.92);
   backdrop-filter: blur(16px);
@@ -395,6 +465,77 @@ main {
 .source-tag { font-size: 0.66rem; color: #4a5568; margin-right: 0.3rem; }
 
 .article-count { font-size: 0.7rem; color: #4a5568; margin-top: 0.4rem; }
+
+/* ── Market ETF chips inside category cards ───────────────────────────────── */
+.card-market {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.7rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid #1a2030;
+}
+
+.etf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #242d3f;
+  font-size: 0.68rem;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  cursor: default;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.etf-chip:hover { background: rgba(255,255,255,0.06); border-color: #3a4a60; }
+
+.etf-symbol {
+  color: #8ba0c0;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.etf-label {
+  color: #4a6080;
+  font-size: 0.6rem;
+  font-family: "Inter", sans-serif;
+}
+
+.etf-price { color: #c9d4e8; font-weight: 600; }
+
+.etf-change {
+  font-weight: 700;
+  font-size: 0.66rem;
+}
+
+.etf-change.up   { color: #38c172; }
+.etf-change.down { color: #e3342f; }
+.etf-change.flat { color: #6b7280; }
+
+.etf-chip.loading .etf-price,
+.etf-chip.loading .etf-change { color: #2d3748; }
+
+/* Market data skeleton shimmer inside cards */
+.card-market-skeleton {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid #1a2030;
+}
+
+.etf-chip-skeleton {
+  height: 22px;
+  width: 90px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #1a2030 25%, #232d40 50%, #1a2030 75%);
+  background-size: 400% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
 
 /* ── Sentiment badges ─────────────────────────────────────────────────────── */
 .sentiment-badge {
