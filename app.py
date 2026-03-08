@@ -1,5 +1,6 @@
 import os
 import json
+import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
@@ -43,6 +44,26 @@ def index():
 @app.route("/<path:filename>")
 def static_files(filename):
     return send_from_directory("frontend", filename)
+
+
+# ── Startup cache pre-warm ────────────────────────────────────────────────────
+# Runs once in a background daemon thread right after gunicorn starts the worker.
+# This populates the 5-min TTL cache for all 10 categories so that the very
+# first user who hits the page gets near-instant results instead of a cold fetch.
+
+def _prewarm_cache():
+    import time
+    time.sleep(6)  # let gunicorn finish booting before hammering external APIs
+    print("[PreWarm] Starting background cache warm-up for all categories…")
+    for cat in CATEGORIES:
+        try:
+            _fetch_category_articles(cat)
+            print(f"[PreWarm] ✓ {cat}")
+        except Exception as exc:
+            print(f"[PreWarm] ✗ {cat}: {exc}")
+    print("[PreWarm] Done — all categories cached.")
+
+threading.Thread(target=_prewarm_cache, daemon=True).start()
 
 
 # ── API: Full digest — batch (kept for backward compat) ───────────────────────
@@ -89,12 +110,31 @@ def _fetch_category_articles(category: str) -> list:
 
 # ── Per-category parallel summarizer ─────────────────────────────────────────
 
+def _dedup_articles(articles: list, max_keep: int = 12) -> list:
+    """Remove near-duplicate articles (same title prefix) and cap the list.
+    Sending fewer tokens to Claude reduces latency without losing coverage.
+    """
+    seen: set = set()
+    unique: list = []
+    for a in articles:
+        # Use first 50 chars of lowercased title as dedup key
+        key = a.get("title", "")[:50].lower().strip()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(a)
+    return unique[:max_keep]
+
+
 def _summarize_category(category: str, articles: list) -> dict:
-    """Build the full cat_summary dict for one category."""
-    summary_data = summarize_topic(category, articles)
+    """Build the full cat_summary dict for one category.
+    Deduplicates + trims articles before the Claude call to reduce prompt
+    tokens and therefore API latency.
+    """
+    trimmed = _dedup_articles(articles)
+    summary_data = summarize_topic(category, trimmed)
     return {
         **summary_data,
-        "article_count": len(articles),
+        "article_count": len(articles),  # report original count, not trimmed
         "articles": [
             {
                 "title": a.get("title", ""),
@@ -124,7 +164,7 @@ def _overview_generator():
     grouped: dict = {}
     fetched_count = 0
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=10) as pool:   # all 10 categories at once
         cat_futures = {pool.submit(_fetch_category_articles, cat): cat for cat in CATEGORIES}
         for fut in as_completed(cat_futures):
             cat = cat_futures[fut]
@@ -145,7 +185,7 @@ def _overview_generator():
     summaries: dict = {}
     summarized_count = 0
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:   # Haiku handles 5 parallel calls fine
         sum_futures = {
             pool.submit(_summarize_category, cat, grouped.get(cat, [])): cat
             for cat in CATEGORIES

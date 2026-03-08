@@ -7,6 +7,13 @@ load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+# ── Model selection ────────────────────────────────────────────────────────────
+# Haiku is 5-10× faster and 10× cheaper than Sonnet — ideal for 10 parallel
+# category summaries where speed matters most.  Sonnet is reserved for the
+# single overall digest where output quality is more important.
+FAST_MODEL  = "claude-3-5-haiku-20241022"   # per-category (fast, cheap, parallel)
+SMART_MODEL = "claude-sonnet-4-6"            # overall digest (quality, one call)
+
 
 def _build_articles_text(articles):
     """Format a list of articles into plain text for the prompt."""
@@ -55,8 +62,8 @@ Respond in this exact JSON format:
 
     try:
         message = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
+            model=FAST_MODEL,   # Haiku: ~0.5-1 s vs ~3-6 s for Sonnet
+            max_tokens=512,     # JSON output never exceeds ~400 tokens
             messages=[{"role": "user", "content": prompt}],
         )
         import json
@@ -122,7 +129,7 @@ Write a 4-5 sentence overall digest that gives the reader a high-level picture o
 
     try:
         message = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=SMART_MODEL,  # Sonnet for the hero digest — quality > speed
             max_tokens=512,
             messages=[{"role": "user", "content": prompt}],
         )

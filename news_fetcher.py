@@ -175,6 +175,9 @@ def _do_fetch_currents(category, language, max_articles):
 def fetch_guardian(topic=None, max_articles=8):
     if not GUARDIAN_API_KEY:
         return []
+    return _cached(f"guardian:{topic}", lambda: _do_fetch_guardian(topic, max_articles))
+
+def _do_fetch_guardian(topic, max_articles):
     url = "https://content.guardianapis.com/search"
     params = {
         "api-key": GUARDIAN_API_KEY,
@@ -206,6 +209,9 @@ def fetch_guardian(topic=None, max_articles=8):
 
 # ── 3. Reddit ─────────────────────────────────────────────────────────────────
 def fetch_reddit(subreddit="worldnews", limit=8):
+    return _cached(f"reddit:{subreddit}", lambda: _do_fetch_reddit(subreddit, limit))
+
+def _do_fetch_reddit(subreddit, limit):
     url = f"https://www.reddit.com/r/{subreddit}/hot.json"
     headers = {"User-Agent": "NewsDigestApp/1.0"}
     try:
@@ -234,6 +240,9 @@ def fetch_reddit(subreddit="worldnews", limit=8):
 def fetch_newsdata(topic=None, language="en", max_articles=8):
     if not NEWSDATA_API_KEY:
         return []
+    return _cached(f"newsdata:{topic}", lambda: _do_fetch_newsdata(topic, language, max_articles))
+
+def _do_fetch_newsdata(topic, language, max_articles):
     url = "https://newsdata.io/api/1/news"
     params = {"apikey": NEWSDATA_API_KEY, "language": language}
     if topic:
@@ -260,6 +269,9 @@ def fetch_newsdata(topic=None, language="en", max_articles=8):
 
 # ── 5. Hacker News (free, no key) ─────────────────────────────────────────────
 def fetch_hackernews(limit=8):
+    return _cached(f"hn:{limit}", lambda: _do_fetch_hackernews(limit))
+
+def _do_fetch_hackernews(limit):
     try:
         ids_resp = requests.get(
             "https://hacker-news.firebaseio.com/v0/topstories.json", timeout=10
@@ -298,6 +310,9 @@ def fetch_hackernews(limit=8):
 
 # ── 6. BBC RSS (free, no key) ─────────────────────────────────────────────────
 def fetch_bbc_rss(category="general", max_articles=8):
+    return _cached(f"bbc:{category}", lambda: _do_fetch_bbc_rss(category, max_articles))
+
+def _do_fetch_bbc_rss(category, max_articles):
     feed_url = BBC_FEEDS.get(category, BBC_FEEDS["general"])
     try:
         feed = feedparser.parse(feed_url)
@@ -319,6 +334,9 @@ def fetch_bbc_rss(category="general", max_articles=8):
 
 # ── 7. AP News RSS (free, no key) ─────────────────────────────────────────────
 def fetch_ap_rss(max_articles=8):
+    return _cached("ap:topnews", lambda: _do_fetch_ap_rss(max_articles))
+
+def _do_fetch_ap_rss(max_articles):
     try:
         feed = feedparser.parse("https://feeds.apnews.com/rss/apf-topnews")
         return [
