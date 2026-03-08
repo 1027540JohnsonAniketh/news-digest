@@ -8,11 +8,15 @@ load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 # ── Model selection ────────────────────────────────────────────────────────────
-# Haiku is 5-10× faster and 10× cheaper than Sonnet — ideal for 10 parallel
-# category summaries where speed matters most.  Sonnet is reserved for the
-# single overall digest where output quality is more important.
-FAST_MODEL  = "claude-3-5-haiku-20241022"   # per-category (fast, cheap, parallel)
-SMART_MODEL = "claude-sonnet-4-6"            # overall digest (quality, one call)
+# FAST_MODEL: tried first for per-category summaries (5-10× faster, cheaper).
+# SMART_MODEL: used for the overall digest AND as automatic fallback if
+#              FAST_MODEL is unavailable on this API key/plan.
+# Try order: claude-3-haiku-20240307 → claude-3-5-haiku-20241022 → Sonnet
+FAST_MODELS = [
+    "claude-3-haiku-20240307",     # original Haiku — universally available
+    "claude-3-5-haiku-20241022",   # newer Haiku — faster but not on all plans
+]
+SMART_MODEL = "claude-sonnet-4-6"             # overall digest (quality, one call)
 
 
 def _build_articles_text(articles):
@@ -60,27 +64,41 @@ Respond in this exact JSON format:
   "sentiment": "positive|negative|mixed|neutral"
 }}"""
 
-    try:
-        message = client.messages.create(
-            model=FAST_MODEL,   # Haiku: ~0.5-1 s vs ~3-6 s for Sonnet
-            max_tokens=512,     # JSON output never exceeds ~400 tokens
-            messages=[{"role": "user", "content": prompt}],
-        )
-        import json
-        text = message.content[0].text.strip()
-        # Extract JSON if wrapped in markdown code block
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        return json.loads(text.strip())
-    except Exception as e:
-        print(f"[Summarizer] Error for topic '{topic}': {e}")
-        return {
-            "summary": "Summary unavailable at this time.",
-            "key_points": [],
-            "sentiment": "neutral",
-        }
+    import json
+
+    # Try fast Haiku models first; fall back to Sonnet if unavailable/erroring
+    models_to_try = FAST_MODELS + [SMART_MODEL]
+    last_error = None
+
+    for model in models_to_try:
+        try:
+            message = client.messages.create(
+                model=model,
+                max_tokens=512,     # JSON output never exceeds ~400 tokens
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = message.content[0].text.strip()
+            # Extract JSON if wrapped in markdown code block
+            if text.startswith("```"):
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:]
+            result = json.loads(text.strip())
+            if model != models_to_try[0]:
+                print(f"[Summarizer] Used fallback model '{model}' for topic '{topic}'")
+            return result
+        except Exception as e:
+            last_error = e
+            print(f"[Summarizer] Model '{model}' failed for topic '{topic}': {type(e).__name__}: {e}")
+            continue  # try next model
+
+    # All models exhausted
+    print(f"[Summarizer] All models failed for topic '{topic}'. Last error: {last_error}")
+    return {
+        "summary": "Summary unavailable at this time.",
+        "key_points": [],
+        "sentiment": "neutral",
+    }
 
 
 def summarize_all_categories(grouped_articles):

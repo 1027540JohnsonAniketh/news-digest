@@ -53,14 +53,18 @@ def static_files(filename):
 
 def _prewarm_cache():
     import time
-    time.sleep(6)  # let gunicorn finish booting before hammering external APIs
+    time.sleep(6)  # let gunicorn finish booting before hitting external APIs
     print("[PreWarm] Starting background cache warm-up for all categories…")
-    for cat in CATEGORIES:
+    for i, cat in enumerate(CATEGORIES):
         try:
             _fetch_category_articles(cat)
             print(f"[PreWarm] ✓ {cat}")
         except Exception as exc:
             print(f"[PreWarm] ✗ {cat}: {exc}")
+        # 3 s gap between categories — spreads Gemini/Currents calls across
+        # ~30 s instead of bursting all at once, avoiding 429 rate limits.
+        if i < len(CATEGORIES) - 1:
+            time.sleep(3)
     print("[PreWarm] Done — all categories cached.")
 
 threading.Thread(target=_prewarm_cache, daemon=True).start()
