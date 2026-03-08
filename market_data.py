@@ -12,6 +12,7 @@ update continuously during trading hours.
 """
 
 import time
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yfinance as yf
@@ -114,17 +115,28 @@ def _empty(symbol: str, label: str, reason: str) -> dict:
 
 
 def _fetch_batch(tickers: list[tuple]) -> list[dict]:
-    """Fetch a list of (symbol, label) tuples concurrently."""
+    """Fetch a list of (symbol, label) tuples concurrently.
+    Returns partial results if some fetches time out — never raises.
+    """
     with ThreadPoolExecutor(max_workers=min(len(tickers), 12)) as ex:
         futures = {ex.submit(_fetch_one, sym, lbl): (sym, lbl)
                    for sym, lbl in tickers}
         results = []
-        for fut in as_completed(futures, timeout=15):
-            try:
-                results.append(fut.result())
-            except Exception:
-                sym, lbl = futures[fut]
-                results.append(_empty(sym, lbl, "timeout"))
+        done_futures: set = set()
+        try:
+            for fut in as_completed(futures, timeout=30):   # 15 → 30 s
+                done_futures.add(fut)
+                try:
+                    results.append(fut.result())
+                except Exception:
+                    sym, lbl = futures[fut]
+                    results.append(_empty(sym, lbl, "error"))
+        except concurrent.futures.TimeoutError:
+            # Some tickers didn't finish — keep partial results + add empties
+            for fut, (sym, lbl) in futures.items():
+                if fut not in done_futures:
+                    print(f"[Market] Timeout for {sym}")
+                    results.append(_empty(sym, lbl, "timeout"))
 
     # Restore original order
     order = {sym: i for i, (sym, _) in enumerate(tickers)}
@@ -159,22 +171,33 @@ def get_all_market_data() -> dict:
 
     def _fetch():
         # Run strip + all 10 category fetches concurrently
-        strip_future = None
-        cat_futures  = {}
-
         with ThreadPoolExecutor(max_workers=12) as ex:
             strip_future = ex.submit(get_market_strip)
             cat_futures  = {ex.submit(get_category_etfs, cat): cat
                             for cat in CATEGORIES}
 
-            strip = strip_future.result(timeout=20)
+            # Strip — graceful fallback on any error
+            try:
+                strip = strip_future.result(timeout=35)   # 20 → 35 s
+            except Exception as e:
+                print(f"[Market] Strip fetch error: {e}")
+                strip = []
+
+            # Category ETFs — collect whatever finishes in time
             categories = {}
-            for fut in as_completed(cat_futures, timeout=20):
-                cat = cat_futures[fut]
-                try:
-                    categories[cat] = fut.result()
-                except Exception:
-                    categories[cat] = []
+            done_cat: set = set()
+            try:
+                for fut in as_completed(cat_futures, timeout=35):  # 20 → 35 s
+                    done_cat.add(fut)
+                    cat = cat_futures[fut]
+                    try:
+                        categories[cat] = fut.result()
+                    except Exception:
+                        categories[cat] = []
+            except concurrent.futures.TimeoutError:
+                for fut, cat in cat_futures.items():
+                    if fut not in done_cat:
+                        categories[cat] = []
 
         return {"strip": strip, "categories": categories}
 

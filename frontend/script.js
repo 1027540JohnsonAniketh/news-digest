@@ -510,9 +510,12 @@ async function loadMarketData() {
   try {
     const res  = await fetch(`${API_BASE}/api/market`);
     const data = await res.json();
-    if (!data.ok) return;
 
-    renderMarketStrip(data.strip);
+    // Render whatever data came back — ok may be false if some tickers timed out
+    // but we still want to show any prices that did load
+    if (data.strip && data.strip.length > 0) {
+      renderMarketStrip(data.strip);
+    }
 
     // Cache categories so swapCardInGrid can inject chips on newly-revealed cards
     if (data.categories) _latestMarketCategories = data.categories;
@@ -526,7 +529,7 @@ async function refreshMarketStrip() {
   try {
     const res  = await fetch(`${API_BASE}/api/market/strip`);
     const data = await res.json();
-    if (data.ok && data.strip) renderMarketStrip(data.strip);
+    if (data.strip && data.strip.length > 0) renderMarketStrip(data.strip);
   } catch { /* silent */ }
 }
 
